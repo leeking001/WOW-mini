@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WoW Mobile v23.0 - Mana Fix</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Friz+Quadrata&display=swap');
+
+        body { margin: 0; background: #000; overflow: hidden; font-family: "Verdana", sans-serif; color: white; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; background-color: #000; }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .interactive { pointer-events: auto; }
+        
+        /* UI Elements */
+        .unit-frame { position: absolute; width: 125px; height: 42px; background: rgba(0,0,0,0.8); border: 1px solid #444; border-radius: 4px; display: flex; align-items: center; top: 10px; }
+        .unit-frame.player { left: 5px; border-color: #d4af37; }
+        .unit-frame.target { left: 135px; border-color: #b30000; display: none; }
+        .portrait { width: 28px; height: 28px; background: #333; border-radius: 50%; margin: 0 4px; border: 1px solid #666; }
+        .stats { flex: 1; padding-right: 4px; }
+        .bar { height: 5px; margin-bottom: 2px; background: #333; border: 1px solid #000; }
+        .bar-fill { height: 100%; width: 100%; transition: width 0.2s; }
+        .hp { background: #00d100; } .mp { background: #0066cc; }
+        .name { font-size: 9px; color: #ffcc00; font-weight: bold; margin-bottom: 1px; white-space: nowrap; overflow: hidden; }
+
+        /* Text overlay for bars */
+        .bar-text {
+            position: absolute; top: 25px; left: 45px; font-size: 8px; color: #fff; text-shadow: 1px 1px 0 #000; pointer-events: none;
+        }
+
+        #minimap-container { position: absolute; top: 55px; right: 5px; width: 90px; height: 90px; border: 2px solid #666; border-radius: 50%; background: rgba(0, 0, 0, 0.9); overflow: hidden; pointer-events: none; }
+        #minimap-canvas { width: 100%; height: 100%; }
+
+        .menu-btn-group { position: absolute; top: 10px; right: 5px; display: flex; gap: 5px; }
+        .menu-btn { width: 32px; height: 32px; background: #222; border: 1px solid #777; color: #ccc; display: flex; justify-content: center; align-items: center; border-radius: 4px; font-weight: bold; font-size: 14px; }
+
+        #joystick-zone { position: absolute; bottom: 40px; left: 30px; width: 120px; height: 120px; z-index: 20; pointer-events: auto; }
+        #joystick-outer { width: 100%; height: 100%; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%; background: rgba(0,0,0,0.1); position: relative; }
+        #joystick-inner { width: 40px; height: 40px; background: rgba(255,255,255,0.5); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+        #skill-zone { position: absolute; bottom: 30px; right: 20px; width: 180px; height: 180px; pointer-events: none; }
+        .skill-btn { position: absolute; border-radius: 50%; background: #111; border: 2px solid #666; display: flex; justify-content: center; align-items: center; box-shadow: 0 0 10px #000; pointer-events: auto; font-size: 24px; color: white; }
+        .skill-btn:active { transform: scale(0.9); border-color: #fff; }
+        #btn-main { width: 70px; height: 70px; bottom: 0; right: 0; border-color: #d4af37; z-index: 25; }
+        #btn-2 { width: 50px; height: 50px; bottom: 80px; right: 10px; }
+        #btn-3 { width: 50px; height: 50px; bottom: 60px; right: 70px; }
+        #btn-4 { width: 40px; height: 40px; bottom: 115px; right: 60px; border-color: #aaa; }
+        .cd-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); border-radius: 50%; clip-path: inset(0 0 100% 0); transition: clip-path 0.1s; pointer-events: none; }
+
+        .chat-box { position: absolute; top: 60px; left: 5px; width: 180px; height: 120px; background: rgba(0,0,0,0.2); overflow-y: auto; font-size: 10px; pointer-events: none; text-shadow: 1px 1px 0 #000; border: none; }
+        .chat-sys { color: #ffcc00; } .chat-loot { color: #1eff00; } .chat-combat { color: #ff4040; } .chat-quest { color: #00f0f0; } .chat-xp { color: #8e44ad; font-weight: bold; }
+
+        #cast-bar { position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%); width: 150px; height: 10px; background: #000; border: 1px solid #888; display: none; }
+        #cast-fill { height: 100%; width: 0; background: #ffd100; }
+        #cast-text { position: absolute; width: 100%; text-align: center; font-size: 9px; top: -1px; color: black; font-weight: bold; }
+
+        #xp-bar { position: absolute; bottom: 0; left: 0; width: 100%; height: 6px; background: #222; border-top: 1px solid #444; }
+        #xp-fill { height: 100%; background: #a335ee; width: 0%; transition: width 0.5s; }
+
+        .window { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 350px; height: 60%; background: rgba(15, 20, 30, 0.98); border: 2px solid #d4af37; border-radius: 8px; padding: 15px; display: none; flex-direction: column; z-index: 100; overflow-y: auto; pointer-events: auto; }
+        .window-header { font-size: 16px; font-weight: bold; color: #ffd100; margin-bottom: 15px; display: flex; justify-content: space-between; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .close-btn { width: 30px; height: 30px; background: #a00; color: white; text-align: center; line-height: 30px; border-radius: 4px; }
+        
+        .bag-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+        .slot { aspect-ratio: 1; background: #222; border: 1px solid #555; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-size: 18px; }
+        .slot.q-common { border-color: white; } .slot.q-uncommon { border-color: #1eff00; } .slot.q-rare { border-color: #0070dd; } .slot.q-epic { border-color: #a335ee; }
+        
+        .quest-btn { width: 100%; padding: 12px; background: #d4af37; color: #000; font-weight: bold; border: none; border-radius: 4px; margin-top: auto; }
+        .floating-text { position: absolute; font-weight: bold; font-size: 20px; pointer-events: none; text-shadow: 1px 1px 0 #000; animation: floatUp 1s ease-out forwards; }
+        .levelup-text { position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); font-size: 40px; color: #ffd100; font-weight: bold; text-shadow: 0 0 20px #ff0; animation: floatUp 2s ease-out forwards; pointer-events: none; z-index: 50; white-space: nowrap; }
+        @keyframes floatUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-40px); opacity: 0; } }
+        
+        #death-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(50, 0, 0, 0.7); display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 999; pointer-events: auto; }
+        
+        .talent-row { display: flex; align-items: center; margin-bottom: 15px; background: #222; padding: 5px; border-radius: 4px; }
+        .talent-icon { width: 40px; height: 40px; background: #111; border: 1px solid #555; display: flex; justify-content: center; align-items: center; font-size: 20px; margin-right: 10px; }
+        .talent-info { flex: 1; }
+        .talent-btn { padding: 5px 10px; background: #333; border: 1px solid #d4af37; color: #ffd100; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="ui-layer">
+        <div class="unit-frame player">
+            <div class="portrait" style="background-color: #3498db;"></div>
+            <div class="stats">
+                <div class="name">英雄 (Lv<span id="p-lvl-display">1</span>)</div>
+                <div class="bar"><div class="bar-fill hp" id="p-hp"></div></div>
+                <div class="bar"><div class="bar-fill mp" id="p-mp"></div></div>
+            </div>
+            <div class="bar-text"><span id="hp-text">150</span> | <span id="mp-text">100</span></div>
+        </div>
+        <div class="unit-frame target" id="target-frame">
+            <div class="portrait" style="background-color: #e74c3c;"></div>
+            <div class="stats">
+                <div class="name" id="target-name">目标</div>
+                <div class="bar"><div class="bar-fill hp" id="target-hp"></div></div>
+            </div>
+        </div>
+
+        <div class="menu-btn-group interactive">
+            <div class="menu-btn" onclick="openWindow('bag')">🎒</div>
+            <div class="menu-btn" onclick="openWindow('char')">👤</div>
+            <div class="menu-btn" onclick="openWindow('talent')">⚡</div>
+            <div class="menu-btn" onclick="openWindow('help')" style="border-color:#ffd100; color:#ffd100">?</div>
+        </div>
+        <div id="minimap-container"><canvas id="minimap-canvas" width="90" height="90"></canvas></div>
+
+        <div class="chat-box" id="chat-log">
+            <div class="chat-sys">v23.0: 法力消耗修复。</div>
+            <div class="chat-sys">施法现在正确消耗法力值。</div>
+        </div>
+
+        <div id="joystick-zone"><div id="joystick-outer"><div id="joystick-inner"></div></div></div>
+        <div id="skill-zone">
+            <div class="skill-btn interactive" id="btn-main" onclick="castSpell(1)">❄️<div class="cd-overlay" id="cd-1"></div></div>
+            <div class="skill-btn interactive" id="btn-2" onclick="castSpell(2)">🔥<div class="cd-overlay" id="cd-2"></div></div>
+            <div class="skill-btn interactive" id="btn-3" onclick="castSpell(3)">✨<div class="cd-overlay" id="cd-3"></div></div>
+            <div class="skill-btn interactive" id="btn-4" onclick="castSpell(4)">🍞</div>
+        </div>
+
+        <div id="cast-bar"><div id="cast-text"></div><div id="cast-fill"></div></div>
+        <div id="xp-bar"><div id="xp-fill"></div></div>
+
+        <div id="win-bag" class="window">
+            <div class="window-header">背包 <div class="close-btn" onclick="closeAllWindows()">×</div></div>
+            <div class="bag-grid" id="bag-grid"></div>
+            <div style="margin-top:10px; text-align:right; color:#ffd100">金币: <span id="gold">0</span></div>
+        </div>
+
+        <div id="win-char" class="window">
+            <div class="window-header">角色 <div class="close-btn" onclick="closeAllWindows()">×</div></div>
+            <div style="display:flex; justify-content:space-around; margin-bottom:20px;">
+                <div class="slot" id="slot-head" onclick="unequip('head')"></div>
+                <div class="slot" id="slot-chest" onclick="unequip('chest')"></div>
+                <div class="slot" id="slot-mainhand" onclick="unequip('mainhand')"></div>
+            </div>
+            <div style="font-size:14px; color:#ddd;">
+                <div>力量: <span style="color:#aaa">5</span> (固定)</div>
+                <div>智力: <span id="st-int" style="color:#0f0">0</span> <span style="font-size:10px;color:#888">(提升法力)</span></div>
+                <div>耐力: <span id="st-sta" style="color:#fff">0</span> <span style="font-size:10px;color:#888">(提升生命)</span></div>
+                <div>法伤: <span id="st-sp" style="color:#ffd100">0</span></div>
+            </div>
+        </div>
+
+        <div id="win-talent" class="window">
+            <div class="window-header">天赋 (点数:<span id="tp">0</span>) <div class="close-btn" onclick="closeAllWindows()">×</div></div>
+            <div class="talent-row">
+                <div class="talent-icon">❄️</div>
+                <div class="talent-info"><div style="color:#ffd100; font-size:14px">寒冰碎片</div><div style="color:#888; font-size:10px">寒冰箭伤害 +10%</div></div>
+                <div id="t-dmg-val" style="margin-right:10px; font-size:12px">0/5</div><button class="talent-btn" onclick="learnTalent('dmg')">+</button>
+            </div>
+            <div class="talent-row">
+                <div class="talent-icon">⚡</div>
+                <div class="talent-info"><div style="color:#ffd100; font-size:14px">奥术速射</div><div style="color:#888; font-size:10px">施法速度 +0.1秒</div></div>
+                <div id="t-spd-val" style="margin-right:10px; font-size:12px">0/5</div><button class="talent-btn" onclick="learnTalent('spd')">+</button>
+            </div>
+        </div>
+
+        <div id="win-quest" class="window">
+            <div class="window-header">任务 <div class="close-btn" onclick="closeAllWindows()">×</div></div>
+            <div id="quest-title" style="color:#ffd100; font-weight:bold; margin-bottom:10px"></div>
+            <div id="quest-desc" style="font-size:14px; color:#ddd; margin-bottom:20px; line-height:1.5;"></div>
+            <button class="quest-btn interactive" id="quest-btn" onclick="questAction()">接受任务</button>
+        </div>
+
+        <div id="win-help" class="window">
+            <div class="window-header">操作说明 <div class="close-btn" onclick="closeAllWindows()">×</div></div>
+            <div style="font-size:12px; color:#ccc; line-height:1.6;">
+                <p><span style="color:#ffd100">技能消耗:</span> 寒冰箭(15), 火冲(30), 智力(60)。</p>
+                <p><span style="color:#ffd100">回复:</span> 没蓝了请点击面包🍞休息。</p>
+            </div>
+        </div>
+        
+        <div id="death-overlay">
+            <div style="font-size:30px; color:#b30000; font-weight:bold; margin-bottom:20px;">你死了</div>
+            <button class="quest-btn interactive" style="width:auto; padding:10px 30px;" onclick="releaseSpirit()">释放灵魂</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const miniCanvas = document.getElementById('minimap-canvas');
+    const miniCtx = miniCanvas.getContext('2d');
+    let W, H;
+    function resize() { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+
+    const player = {
+        x: 1000, y: 1000, r: 15, color: '#3498db', speed: 4,
+        hp: 150, maxHp: 150, mp: 100, maxMp: 100, isResting: false,
+        level: 1, xp: 0, maxXp: 100, 
+        bag: new Array(20).fill(null), equip: { head: null, chest: null, mainhand: null },
+        quest: { active: false, progress: 0, target: 0, id: 0 },
+        baseStats: { int: 5, sta: 5 },
+        stats: { int: 5, sta: 5, sp: 0 },
+        talents: { points: 0, dmg: 0, spd: 0 },
+        target: null, casting: null, gcd: 0, dead: false
+    };
+    const camera = { x: 0, y: 0 };
+    const joystick = { active: false, dx: 0, dy: 0, id: null, sx: 0, sy: 0 };
+    
+    class Mob {
+        constructor(name, x, y, level, hp, col, isAggro, xpValue) {
+            this.name=name; this.spawnX=x; this.spawnY=y; this.x=x; this.y=y; 
+            this.level=level; this.maxHp=hp; this.hp=hp; this.col=col; this.r=20; 
+            if(level >= 10) this.r = 35; 
+            this.dead=false; this.deathTime=0; this.isNpc=!isAggro;
+            this.aggroRange = isAggro ? 80 : 0; 
+            this.isAggroed = false; this.lastAttack = 0;
+            this.xpValue = xpValue || 40;
+            this.damage = 5 + level * 2;
+        }
+        respawn() { this.dead=false; this.hp=this.maxHp; this.x=this.spawnX; this.y=this.spawnY; this.isAggroed=false; }
+    }
+    
+    const mobs = [
+        new Mob("治安官杜汉", 1050, 950, 60, 9999, "#ffd100", false, 0),
+        new Mob("幼年野猪", 1200, 1000, 1, 60, "#e74c3c", true, 40),
+        new Mob("幼年野猪", 800, 1100, 1, 60, "#e74c3c", true, 40),
+        new Mob("狗头人歹徒", 1200, 800, 2, 80, "#e74c3c", true, 50),
+        new Mob("狗头人歹徒", 900, 1200, 2, 80, "#e74c3c", true, 50),
+        new Mob("森林狼", 1000, 600, 3, 120, "#c0392b", true, 60),
+        new Mob("森林狼", 1300, 600, 3, 120, "#c0392b", true, 60),
+        new Mob("迪菲亚割喉者", 1000, 1400, 4, 150, "#c0392b", true, 70),
+        new Mob("迪菲亚割喉者", 700, 1400, 4, 150, "#c0392b", true, 70),
+        new Mob("巨大的灰熊", 1600, 1000, 5, 250, "#8e44ad", true, 100),
+        new Mob("巨大的灰熊", 1600, 1200, 5, 250, "#8e44ad", true, 100),
+        new Mob("森林蜘蛛", 400, 1000, 6, 220, "#8e44ad", true, 90),
+        new Mob("森林蜘蛛", 400, 800, 6, 220, "#8e44ad", true, 90),
+        new Mob("鱼人滩行者", 1800, 1800, 7, 350, "#e67e22", true, 150),
+        new Mob("麦田傀儡", 200, 200, 8, 450, "#e67e22", true, 200),
+        new Mob("霍格 (精英)", 200, 1800, 10, 1500, "#ff0000", true, 500) 
+    ];
+
+    const ITEMS = [ 
+        {name:"法杖", slot:"mainhand", q:"common", icon:"🦯", stats:{int:2, sp:5}}, 
+        {name:"长袍", slot:"chest", q:"rare", icon:"👘", stats:{int:5, sp:2}},
+        {name:"弯曲的魔杖", slot:"mainhand", q:"uncommon", icon:"🪄", stats:{int:4, sp:8}},
+        {name:"丝绸兜帽", slot:"head", q:"uncommon", icon:"🧢", stats:{int:3, sp:3}}
+    ];
+    
+    const QUESTS = [
+        {title:"清理野猪", desc:"击杀 3 只幼年野猪。", target:"幼年野猪", count:3, gold:50, xp:100},
+        {title:"狗头人的麻烦", desc:"击杀 3 只狗头人歹徒。", target:"狗头人歹徒", count:3, gold:60, xp:120},
+        {title:"狼群威胁", desc:"击杀 3 只森林狼。", target:"森林狼", count:3, gold:80, xp:150},
+        {title:"清理道路", desc:"击杀 5 只幼年野猪。", target:"幼年野猪", count:5, gold:90, xp:180},
+        {title:"迪菲亚兄弟会", desc:"击杀 3 个迪菲亚割喉者。", target:"迪菲亚割喉者", count:3, gold:100, xp:220},
+        {title:"熊掌", desc:"击杀 2 只巨大的灰熊。", target:"巨大的灰熊", count:2, gold:120, xp:300},
+        {title:"蜘蛛毒液", desc:"击杀 3 只森林蜘蛛。", target:"森林蜘蛛", count:3, gold:130, xp:350},
+        {title:"更多强盗", desc:"击杀 5 个迪菲亚割喉者。", target:"迪菲亚割喉者", count:5, gold:150, xp:400},
+        {title:"狼王护卫", desc:"击杀 5 只森林狼。", target:"森林狼", count:5, gold:160, xp:450},
+        {title:"熊皮大衣", desc:"击杀 4 只巨大的灰熊。", target:"巨大的灰熊", count:4, gold:200, xp:600},
+        {title:"蜘蛛卵", desc:"击杀 5 只森林蜘蛛。", target:"森林蜘蛛", count:5, gold:220, xp:650},
+        {title:"鱼人的突袭", desc:"击杀 3 只鱼人滩行者。", target:"鱼人滩行者", count:3, gold:250, xp:800},
+        {title:"失控的傀儡", desc:"击杀 2 个麦田傀儡。", target:"麦田傀儡", count:2, gold:300, xp:900},
+        {title:"海滩清理", desc:"击杀 5 只鱼人滩行者。", target:"鱼人滩行者", count:5, gold:350, xp:1000},
+        {title:"农场保卫战", desc:"击杀 5 个麦田傀儡。", target:"麦田傀儡", count:5, gold:400, xp:1200},
+        {title:"精英挑战: 灰熊", desc:"击杀 8 只巨大的灰熊。", target:"巨大的灰熊", count:8, gold:500, xp:1500},
+        {title:"精英挑战: 蜘蛛", desc:"击杀 8 只森林蜘蛛。", target:"森林蜘蛛", count:8, gold:550, xp:1600},
+        {title:"精英挑战: 鱼人", desc:"击杀 8 只鱼人滩行者。", target:"鱼人滩行者", count:8, gold:600, xp:1800},
+        {title:"通缉: 霍格", desc:"击杀 1 次霍格！(BOSS)", target:"霍格 (精英)", count:1, gold:1000, xp:5000},
+        {title:"艾泽拉斯传奇", desc:"你已经成为了传说。再去杀 10 只幼年野猪助助兴吧。", target:"幼年野猪", count:10, gold:1, xp:1}
+    ];
+
+    // JOYSTICK
+    const joyZone = document.getElementById('joystick-zone');
+    const joyInner = document.getElementById('joystick-inner');
+    joyZone.addEventListener('touchstart', e => { e.preventDefault(); const t=e.changedTouches[0]; joystick.active=true; joystick.id=t.identifier; const r=joyZone.getBoundingClientRect(); joystick.sx=r.left+r.width/2; joystick.sy=r.top+r.height/2; moveJoy(t); });
+    joyZone.addEventListener('touchmove', e => { e.preventDefault(); for(let i=0;i<e.changedTouches.length;i++) if(e.changedTouches[i].identifier===joystick.id) moveJoy(e.changedTouches[i]); });
+    const endJoy = (e) => { e.preventDefault(); joystick.active=false; joystick.dx=0; joystick.dy=0; joyInner.style.transform=`translate(-50%, -50%)`; };
+    joyZone.addEventListener('touchend', endJoy); joyZone.addEventListener('touchcancel', endJoy);
+    function moveJoy(t) { let dx=t.clientX-joystick.sx, dy=t.clientY-joystick.sy; const d=Math.hypot(dx, dy), max=40; if(d>max) { dx=(dx/d)*max; dy=(dy/d)*max; } joystick.dx=dx/max; joystick.dy=dy/max; joyInner.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
+
+    // TAP
+    canvas.addEventListener('touchstart', e => {
+        e.preventDefault(); const t=e.changedTouches[0];
+        const r=canvas.getBoundingClientRect(); const mx=t.clientX-r.left+camera.x, my=t.clientY-r.top+camera.y;
+        let c=null; mobs.forEach(m => { if(!m.dead && Math.hypot(mx-m.x, my-m.y)<40) c=m; });
+        if(c) {
+            player.target=c; updateTargetFrame();
+            if(c.isNpc && Math.hypot(player.x-c.x, player.y-c.y)<150) openQuestWindow();
+        }
+    });
+
+    function loop() {
+        if(!player.dead) {
+            if(joystick.active) {
+                player.x += joystick.dx * player.speed; player.y += joystick.dy * player.speed;
+                if(player.casting) { player.casting=null; document.getElementById('cast-bar').style.display='none'; logChat("移动打断"); }
+                player.isResting = false;
+            }
+            if (player.isResting) { 
+                player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.005); 
+                player.mp = Math.min(player.maxMp, player.mp + player.maxMp * 0.005);
+            } else if (!joystick.active) { 
+                player.hp = Math.min(player.maxHp, player.hp + 0.02); 
+                player.mp = Math.min(player.maxMp, player.mp + 0.02);
+            }
+            updatePlayerFrame();
+        }
+
+        camera.x = player.x - W/2; camera.y = player.y - H/2;
+
+        mobs.forEach(m => {
+            if(m.dead) { if(Date.now() - m.deathTime > 5000) m.respawn(); return; }
+            if(!m.isNpc && !player.dead) {
+                const dist = Math.hypot(player.x - m.x, player.y - m.y);
+                const spawnDist = Math.hypot(m.x - m.spawnX, m.y - m.spawnY);
+                if(spawnDist > 600) { m.isAggroed = false; m.x = m.spawnX; m.y = m.spawnY; m.hp = m.maxHp; } 
+
+                if(dist < m.aggroRange || m.isAggroed) {
+                    player.isResting = false;
+                    if(dist > 35) {
+                        const ang = Math.atan2(player.y - m.y, player.x - m.x);
+                        m.x += Math.cos(ang) * 2.5; m.y += Math.sin(ang) * 2.5;
+                    } else {
+                        if(Date.now() - m.lastAttack > 1500) {
+                            player.hp -= m.damage; m.lastAttack = Date.now();
+                            createFloatingText(player.x, player.y, `-${m.damage}`, "red");
+                            if(player.hp <= 0) { player.dead=true; document.getElementById('death-overlay').style.display='flex'; }
+                        }
+                    }
+                }
+            }
+        });
+
+        if(player.casting) {
+            const pct = ((Date.now()-player.casting.start)/player.casting.dur)*100;
+            document.getElementById('cast-fill').style.width = pct+'%';
+            if(pct>=100) { player.casting.fn(); player.casting=null; document.getElementById('cast-bar').style.display='none'; }
+        }
+
+        draw(); drawMinimap();
+        requestAnimationFrame(loop);
+    }
+
+    function draw() {
+        ctx.fillStyle = "#051505"; ctx.fillRect(0,0,W,H);
+        ctx.save(); ctx.translate(-camera.x, -camera.y);
+        ctx.strokeStyle = "#113311"; ctx.lineWidth=2; ctx.beginPath();
+        const gs=50, sx=Math.floor(camera.x/gs)*gs, sy=Math.floor(camera.y/gs)*gs;
+        for(let x=sx; x<camera.x+W+gs; x+=gs) { ctx.moveTo(x, camera.y); ctx.lineTo(x, camera.y+H+gs); }
+        for(let y=sy; y<camera.y+H+gs; y+=gs) { ctx.moveTo(camera.x, y); ctx.lineTo(camera.x+W+gs, y); }
+        ctx.stroke();
+
+        mobs.forEach(m => {
+            if(m.dead) { ctx.fillStyle="#555"; ctx.font="20px Arial"; ctx.fillText("☠️", m.x-10, m.y); return; }
+            if(player.target===m) { ctx.beginPath(); ctx.arc(m.x, m.y, m.r+5, 0, Math.PI*2); ctx.strokeStyle="red"; ctx.lineWidth=2; ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fillStyle=m.col; ctx.fill();
+            ctx.fillStyle="#fff"; ctx.font="10px Arial"; ctx.textAlign="center"; ctx.fillText(m.name, m.x, m.y-m.r-10);
+            ctx.fillStyle="#000"; ctx.fillRect(m.x-20, m.y-m.r-5, 40, 4); ctx.fillStyle="#0f0"; ctx.fillRect(m.x-20, m.y-m.r-5, 40*(m.hp/m.maxHp), 4);
+            if(m.isNpc && !player.quest.active) { ctx.fillStyle="#ffd100"; ctx.font="bold 24px Arial"; ctx.fillText("!", m.x, m.y-45); }
+            if(m.isNpc && player.quest.active && player.quest.progress>=player.quest.target) { ctx.fillStyle="#ffd100"; ctx.font="bold 24px Arial"; ctx.fillText("?", m.x, m.y-45); }
+        });
+
+        if(!player.dead) { ctx.beginPath(); ctx.arc(player.x, player.y, 15, 0, Math.PI*2); ctx.fillStyle=player.color; ctx.fill(); }
+        ctx.restore();
+    }
+
+    function drawMinimap() {
+        miniCtx.fillStyle="#000"; miniCtx.fillRect(0,0,100,100);
+        miniCtx.save(); miniCtx.translate(45, 45);
+        const scale = 0.05;
+        mobs.forEach(m => {
+            if(m.dead) return;
+            const rx = (m.x - player.x) * scale; const ry = (m.y - player.y) * scale;
+            if(Math.abs(rx)<45 && Math.abs(ry)<45) {
+                miniCtx.beginPath(); miniCtx.arc(rx, ry, 3, 0, Math.PI*2);
+                miniCtx.fillStyle = m.isNpc ? "yellow" : "red"; miniCtx.fill();
+            }
+        });
+        miniCtx.beginPath(); miniCtx.arc(0, 0, 3, 0, Math.PI*2); miniCtx.fillStyle="#3498db"; miniCtx.fill();
+        miniCtx.restore();
+    }
+
+    // MANA FIX START
+    window.castSpell = function(id) {
+        if(player.gcd > Date.now()) { logChat("冷却中"); return; }
+        
+        // MANA CHECK AND DEDUCTION
+        const cost = id===1?15 : id===2?30 : id===3?60 : 0;
+        if(player.mp < cost && id!==4) { logChat("法力不足"); return; }
+
+        if(id===1) {
+            if(!player.target || player.target.isNpc || player.target.dead) { logChat("需目标"); return; }
+            let t = 1500 - (player.talents.spd*100);
+            startCast("寒冰箭", t, () => {
+                player.mp -= cost; // Deduct after cast
+                dealDamage(player.target, 30 + player.stats.sp);
+            });
+        } else if(id===2) {
+            if(!player.target || player.target.isNpc || player.target.dead) { logChat("需目标"); return; }
+            player.mp -= cost; // Deduct instant
+            dealDamage(player.target, 20 + player.stats.sp); player.gcd=Date.now()+1500;
+        } else if(id===3) { 
+            player.mp -= cost; 
+            logChat("智力提升"); player.gcd=Date.now()+1000; 
+        }
+        else if(id===4) { 
+            if(Date.now()-player.lastCombatTime<3000) { logChat("战斗中"); return; }
+            player.isResting = true; logChat("快速恢复中..."); 
+        }
+        updatePlayerFrame();
+    };
+    // MANA FIX END
+
+    function startCast(n, d, fn) {
+        player.casting = { name:n, dur:d, start:Date.now(), fn:fn };
+        document.getElementById('cast-bar').style.display='block';
+        document.getElementById('cast-text').innerText = n;
+    }
+
+    function dealDamage(t, amt) {
+        amt = Math.floor(amt * (1 + player.talents.dmg * 0.1));
+        t.hp -= amt; 
+        t.isAggroed = true; 
+        createFloatingText(t.x, t.y, amt, "yellow");
+        if(t.hp <= 0) {
+            t.dead=true; t.deathTime=Date.now(); player.target=null; 
+            document.getElementById('target-frame').style.display='none';
+            logChat(`${t.name} 死亡`);
+            gainXp(t.xpValue);
+            if(Math.random()>0.5) { const i = ITEMS[Math.floor(Math.random()*ITEMS.length)]; const idx = player.bag.findIndex(x=>x===null); if(idx!==-1) player.bag[idx]=JSON.parse(JSON.stringify(i)); }
+            if(player.quest.active && t.name === QUESTS[player.quest.id].target) player.quest.progress++;
+        }
+        updateTargetFrame();
+    }
+
+    function gainXp(a) {
+        if(player.level>=60)return; player.xp+=a;
+        logChat(`获得 ${a} 经验`, "chat-xp");
+        while(player.xp>=player.maxXp) {
+            player.level++; player.xp-=player.maxXp; player.maxXp=Math.floor(player.maxXp*1.5);
+            player.talents.points++; 
+            player.baseStats.int += 2; player.baseStats.sta += 2; 
+            updateStats();
+            player.hp=player.maxHp; player.mp=player.maxMp;
+            const d=document.createElement('div');d.className='levelup-text';d.innerText=`LEVEL UP! ${player.level}`;document.body.appendChild(d);setTimeout(()=>d.remove(),2000);
+            updateTalentUI();
+            logChat(`恭喜! 属性提升!`, "chat-sys");
+        }
+        updatePlayerFrame();
+    }
+
+    function openQuestWindow() {
+        if(player.quest.id >= QUESTS.length) { logChat("无更多任务"); return; }
+        const q = QUESTS[player.quest.id];
+        const win = document.getElementById('win-quest');
+        document.getElementById('quest-title').innerText = q.title;
+        win.style.display='flex';
+        const btn = document.getElementById('quest-btn');
+        if(player.quest.active) {
+            document.getElementById('quest-desc').innerText = `进度: ${player.quest.progress} / ${q.count}`;
+            btn.innerText = (player.quest.progress >= q.count) ? "完成任务" : "进行中";
+            btn.onclick = (player.quest.progress >= q.count) ? completeQuest : null;
+        } else {
+            document.getElementById('quest-desc').innerText = q.desc;
+            btn.innerText = "接受任务"; btn.onclick = acceptQuest;
+        }
+    }
+    function acceptQuest() { player.quest.active=true; player.quest.progress=0; player.quest.target=QUESTS[player.quest.id].count; document.getElementById('win-quest').style.display='none'; logChat("接受任务"); }
+    function completeQuest() { player.quest.active=false; player.quest.id++; document.getElementById('win-quest').style.display='none'; logChat("完成! 获得金币."); gainXp(QUESTS[player.quest.id-1].xp); }
+
+    function updatePlayerFrame() { 
+        document.getElementById('p-hp').style.width = (player.hp/player.maxHp)*100+'%'; 
+        document.getElementById('p-mp').style.width = (player.mp/player.maxMp)*100+'%'; 
+        document.getElementById('p-lvl-display').innerText = player.level;
+        document.getElementById('xp-fill').style.width = (player.xp/player.maxXp)*100+'%';
+        document.getElementById('hp-text').innerText = Math.floor(player.hp);
+        document.getElementById('mp-text').innerText = Math.floor(player.mp);
+    }
+    function updateTargetFrame() {
+        if(player.target && !player.target.dead) { document.getElementById('target-frame').style.display='flex'; document.getElementById('target-name').innerText = player.target.name; document.getElementById('target-hp').style.width = (player.target.hp/player.target.maxHp)*100+'%'; } else document.getElementById('target-frame').style.display='none';
+    }
+    function logChat(m, c) { const l=document.getElementById('chat-log'); l.innerHTML+=`<div class="${c||''}" style="color:#ddd;margin-bottom:2px;">${m}</div>`; l.scrollTop=l.scrollHeight; }
+    window.openWindow=function(id){ document.querySelectorAll('.window').forEach(w=>w.style.display='none'); document.getElementById('win-'+id).style.display='flex'; if(id==='bag')renderBag(); if(id==='talent')updateTalentUI(); };
+    window.closeAllWindows=function(){ document.querySelectorAll('.window').forEach(w=>w.style.display='none'); };
+    function renderBag() { const g=document.getElementById('bag-grid'); g.innerHTML=''; player.bag.forEach((it,i)=>{ const d=document.createElement('div'); d.className=`slot ${it?'q-'+it.q:''}`; d.innerHTML=it?it.icon:''; if(it)d.onclick=()=>equip(i); g.appendChild(d); }); }
+    function equip(i) { const it=player.bag[i]; if(!it)return; const s=it.slot; const old=player.equip[s]; player.equip[s]=it; player.bag[i]=old; renderBag(); logChat(`装备: ${it.name}`); updateStats(); }
+    window.unequip=function(s) { const it=player.equip[s]; if(!it)return; const idx=player.bag.findIndex(x=>x===null); if(idx!==-1){player.bag[idx]=it;player.equip[s]=null;renderBag();logChat(`卸下: ${it.name}`);updateStats();} };
+    function updateStats() {
+        let i = player.baseStats.int; 
+        let s = player.baseStats.sta; 
+        let sp = 0;
+        Object.values(player.equip).forEach(it => { if(it){ i+=it.stats.int; sp+=it.stats.sp; } });
+        player.stats.int=i; player.stats.sp=sp; player.stats.sta=s;
+        player.maxHp = 150 + (s * 10); 
+        player.maxMp = 100 + (i * 10); 
+        document.getElementById('st-int').innerText=i; document.getElementById('st-sp').innerText=sp; document.getElementById('st-sta').innerText=s;
+        ['head','chest','mainhand'].forEach(k=>{ const el=document.getElementById('slot-'+k); const it=player.equip[k]; el.className=`slot ${it?'q-'+it.q:''}`; el.innerHTML=it?it.icon:''; });
+    }
+    window.learnTalent=function(t){ if(player.talents.points>0 && player.talents[t]<5){ player.talents.points--; player.talents[t]++; updateTalentUI(); } };
+    function updateTalentUI(){ document.getElementById('tp').innerText=player.talents.points; document.getElementById('t-dmg-val').innerText=player.talents.dmg+"/5"; document.getElementById('t-spd-val').innerText=player.talents.spd+"/5"; }
+    function createFloatingText(x,y,t,c) { const d=document.createElement('div');d.className='floating-text';d.innerText=t;d.style.color=c;d.style.left=(x-camera.x+W/2)+'px';d.style.top=(y-camera.y+H/2)+'px';document.body.appendChild(d);setTimeout(()=>d.remove(),1000); }
+    window.releaseSpirit=function(){ player.dead=false; player.hp=50; player.x=1000; player.y=1000; document.getElementById('death-overlay').style.display='none'; };
+
+    updateStats(); 
+    loop();
+</script>
+</body>
+</html>
